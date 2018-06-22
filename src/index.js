@@ -189,8 +189,8 @@ module.exports = function (connect) {
 
     get(sid, callback) {
       return withCallback(this.collectionReady()
-        .then(collection => collection.findOne({
-          _id: this.computeStorageId(sid),
+        .then(async collection => collection.findOne({
+          _id: await this.computeStorageId(sid),
           $or: [
             {expires: {$exists: false}},
             {expires: {$gt: new Date()}}
@@ -216,32 +216,32 @@ module.exports = function (connect) {
       }
 
       let s
+      let storageId
 
-      try {
-        s = {_id: this.computeStorageId(sid), session: this.transformFunctions.serialize(session)}
-      } catch (err) {
-        return callback(err)
-      }
+      return withCallback((async () => {
+        storageId = await this.computeStorageId(sid)
 
-      if (session && session.cookie && session.cookie.expires) {
-        s.expires = new Date(session.cookie.expires)
-      } else {
-        // If there's no expiration date specified, it is
-        // browser-session cookie or there is no cookie at all,
-        // as per the connect docs.
-        //
-        // So we set the expiration to two-weeks from now
-        // - as is common practice in the industry (e.g Django) -
-        // or the default specified in the options.
-        s.expires = new Date(Date.now() + (this.ttl * 1000))
-      }
+        s = {_id: storageId, session: this.transformFunctions.serialize(session)}
 
-      if (this.options.touchAfter > 0) {
-        s.lastModified = new Date()
-      }
+        if (session && session.cookie && session.cookie.expires) {
+          s.expires = new Date(session.cookie.expires)
+        } else {
+          // If there's no expiration date specified, it is
+          // browser-session cookie or there is no cookie at all,
+          // as per the connect docs.
+          //
+          // So we set the expiration to two-weeks from now
+          // - as is common practice in the industry (e.g Django) -
+          // or the default specified in the options.
+          s.expires = new Date(Date.now() + (this.ttl * 1000))
+        }
 
-      return withCallback(this.collectionReady()
-        .then(collection => collection.update({_id: this.computeStorageId(sid)}, s, Object.assign({upsert: true}, this.writeOperationOptions)))
+        if (this.options.touchAfter > 0) {
+          s.lastModified = new Date()
+        }
+      })()
+        .then(() => this.collectionReady())
+        .then(collection => collection.update({_id: storageId}, s, Object.assign({upsert: true}, this.writeOperationOptions)))
         .then(rawResponse => {
           if (rawResponse.result) {
             rawResponse = rawResponse.result
@@ -281,7 +281,7 @@ module.exports = function (connect) {
       }
 
       return withCallback(this.collectionReady()
-        .then(collection => collection.update({_id: this.computeStorageId(sid)}, {$set: updateFields}, this.writeOperationOptions))
+        .then(async collection => collection.update({_id: await this.computeStorageId(sid)}, {$set: updateFields}, this.writeOperationOptions))
         .then(result => {
           if (result.nModified === 0) {
             throw new Error('Unable to find the session to touch')
@@ -294,7 +294,7 @@ module.exports = function (connect) {
 
     destroy(sid, callback) {
       return withCallback(this.collectionReady()
-        .then(collection => collection.remove({_id: this.computeStorageId(sid)}, this.writeOperationOptions))
+        .then(async collection => collection.remove({_id: await this.computeStorageId(sid)}, this.writeOperationOptions))
         .then(() => this.emit('destroy', sid))
         , callback)
     }
