@@ -74,6 +74,7 @@ module.exports = function (connect) {
       this.collectionName = options.collection || 'sessions'
       this.autoRemove = options.autoRemove || 'native'
       this.autoRemoveInterval = options.autoRemoveInterval || 10
+      this.writeOperationOptions = options.writeOperationOptions || {}
       this.transformFunctions = computeTransformFunctions(options, true)
 
       this.options = options
@@ -133,9 +134,9 @@ module.exports = function (connect) {
       const removeQuery = {expires: {$lt: new Date()}}
       switch (this.autoRemove) {
         case 'native':
-          return this.collection.createIndex({expires: 1}, {expireAfterSeconds: 0})
+          return this.collection.createIndex({expires: 1}, Object.assign({expireAfterSeconds: 0}, this.writeOperationOptions))
         case 'interval':
-          this.timer = setInterval(() => this.collection.remove(removeQuery, {w: 0}), this.autoRemoveInterval * 1000 * 60)
+          this.timer = setInterval(() => this.collection.remove(removeQuery, Object.assign({}, this.writeOperationOptions, {w: 0, j: false})), this.autoRemoveInterval * 1000 * 60)
           this.timer.unref()
           return Promise.resolve()
         default:
@@ -240,7 +241,7 @@ module.exports = function (connect) {
       }
 
       return withCallback(this.collectionReady()
-        .then(collection => collection.update({_id: this.computeStorageId(sid)}, s, {upsert: true}))
+        .then(collection => collection.update({_id: this.computeStorageId(sid)}, s, Object.assign({upsert: true}, this.writeOperationOptions)))
         .then(rawResponse => {
           if (rawResponse.result) {
             rawResponse = rawResponse.result
@@ -280,7 +281,7 @@ module.exports = function (connect) {
       }
 
       return withCallback(this.collectionReady()
-        .then(collection => collection.update({_id: this.computeStorageId(sid)}, {$set: updateFields}))
+        .then(collection => collection.update({_id: this.computeStorageId(sid)}, {$set: updateFields}, this.writeOperationOptions))
         .then(result => {
           if (result.nModified === 0) {
             throw new Error('Unable to find the session to touch')
@@ -293,7 +294,7 @@ module.exports = function (connect) {
 
     destroy(sid, callback) {
       return withCallback(this.collectionReady()
-        .then(collection => collection.remove({_id: this.computeStorageId(sid)}))
+        .then(collection => collection.remove({_id: this.computeStorageId(sid)}, this.writeOperationOptions))
         .then(() => this.emit('destroy', sid))
         , callback)
     }
